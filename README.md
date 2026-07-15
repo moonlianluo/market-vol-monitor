@@ -7,7 +7,7 @@ par yields and equity daily closes from yfinance, with Stooq as a fallback.
 
 ```powershell
 python -m pip install -r requirements.txt
-streamlit run streamlit_app.py
+python -m streamlit run streamlit_app.py
 ```
 
 The existing standalone local server remains available:
