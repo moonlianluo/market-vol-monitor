@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+.streamlit/secrets.toml
+.tmp_*
+dashboard.html
+data/equity_*.csv
+data/treasury_*.csv
