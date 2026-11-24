@@ -1,10 +1,10 @@
 __pycache__/
 *.py[cod]
-.env
+.pytest_cache/
+pytest-cache-files-*/
 .venv/
-venv/
-.streamlit/secrets.toml
-.tmp_*
 dashboard.html
-data/equity_*.csv
 data/treasury_*.csv
+data/equity_*.csv
+.streamlit/secrets.toml
+

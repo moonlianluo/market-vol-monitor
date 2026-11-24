@@ -16,7 +16,6 @@ Dependencies: pandas, numpy, requests   (pip install pandas numpy requests)
 Data is cached in ./data/ as plain CSVs:
     treasury_<year>.csv   — one per calendar year (current year is always re-fetched)
     equity_<ticker>.csv   — full daily close history per ticker
-    tariffs.csv           — annual average U.S. tariff rate; append a row each year by hand
 
 Run it on a schedule (cron / Windows Task Scheduler) and point people at dashboard.html.
 """
@@ -65,10 +64,6 @@ TREASURY_URL = ("https://home.treasury.gov/resource-center/data-chart-center/"
                 "&page&_format=csv")
 STOOQ_URL = "https://stooq.com/q/d/l/?s={sym}.us&i=d"
 
-# Annual average U.S. tariff rate on total imports (%). Seeds data/tariffs.csv on
-# first run; edit/append that file by hand thereafter — it wins over this default.
-TARIFF_DEFAULT = "Year,Rate\n1900,27.5\n1901,28.8\n1902,27.8\n1903,27.8\n1904,26.2\n1905,23.7\n1906,24.2\n1907,23.3\n1908,23.9\n1909,23.0\n1910,21.1\n1911,20.3\n1912,18.6\n1913,17.7\n1914,14.9\n1915,12.5\n1916,9.6\n1917,6.3\n1918,5.7\n1919,6.2\n1920,6.4\n1921,11.4\n1922,14.7\n1923,15.2\n1924,14.9\n1925,13.2\n1926,13.4\n1927,13.8\n1928,13.3\n1929,13.5\n1930,15.8\n1931,17.8\n1932,19.6\n1933,19.8\n1934,18.4\n1935,17.5\n1936,16.8\n1937,15.6\n1938,15.5\n1939,14.4\n1940,12.5\n1941,13.6\n1942,11.6\n1943,11.6\n1944,9.9\n1945,9.6\n1946,10.3\n1947,7.9\n1948,5.9\n1949,5.7\n1950,6.1\n1951,5.6\n1952,5.3\n1953,5.5\n1954,5.4\n1955,5.9\n1956,5.9\n1957,6.0\n1958,6.5\n1959,7.1\n1960,7.2\n1961,7.2\n1962,7.6\n1963,7.4\n1964,7.4\n1965,7.6\n1966,7.6\n1967,7.5\n1968,7.1\n1969,7.1\n1970,6.5\n1971,6.1\n1972,5.7\n1973,5.0\n1974,3.8\n1975,3.9\n1976,3.9\n1977,4.0\n1978,3.5\n1979,3.1\n1980,3.4\n1981,3.6\n1982,3.7\n1983,3.7\n1984,3.8\n1985,3.6\n1986,3.5\n1987,3.4\n1988,3.4\n1989,3.3\n1990,3.4\n1991,3.3\n1992,3.2\n1993,3.0\n1994,2.5\n1995,2.3\n1996,2.1\n1997,2.0\n1998,1.8\n1999,1.6\n2000,1.6\n2001,1.7\n2002,1.6\n2003,1.5\n2004,1.4\n2005,1.4\n2006,1.4\n2007,1.3\n2008,1.4\n2009,1.4\n2010,1.3\n2011,1.3\n2012,1.4\n2013,1.4\n2014,1.5\n2015,1.5\n2016,1.4\n2017,1.8\n2018,2.7\n2019,2.8\n2020,2.8\n2021,3.0\n2022,2.8\n2023,2.4\n2024,2.5\n2025,14.5\n"
-
 # ----------------------------------------------------------------------------- fetch
 
 def _http_get(url: str) -> str:
@@ -101,8 +96,10 @@ def load_treasury(offline: bool) -> pd.DataFrame:
         if cached.exists():
             frames.append(pd.read_csv(cached))
     if not frames:
-        sys.exit("No Treasury data available. Run without --offline, or bootstrap "
-                 "the cache with --bootstrap-xlsx <workbook.xlsx>.")
+        raise RuntimeError(
+            "No Treasury data available. Run without --offline, or bootstrap "
+            "the cache with --bootstrap-xlsx <workbook.xlsx>."
+        )
     df = pd.concat(frames, ignore_index=True)
     df['Date'] = pd.to_datetime(df['Date'], format='mixed')
     keep = ['Date'] + [c for c in TENORS if c in df.columns]
@@ -198,15 +195,6 @@ def load_equity(offline: bool) -> pd.DataFrame | None:
         return None
     return pd.DataFrame(cols).sort_index()
 
-
-def load_tariffs() -> pd.DataFrame:
-    DATA_DIR.mkdir(exist_ok=True)
-    f = DATA_DIR / "tariffs.csv"
-    if not f.exists():
-        f.write_text(TARIFF_DEFAULT, encoding='utf-8')
-    t = pd.read_csv(f).dropna()
-    t.columns = ['Year', 'Rate']
-    return t
 
 # ----------------------------------------------------------------------------- compute
 
@@ -434,10 +422,6 @@ def make_payload(offline: bool, as_of: str | None = None) -> dict:
     if px is None:
         print("  no equity data available - equity sections will show an empty state")
 
-    tariffs = load_tariffs()
-    if cutoff is not None:
-        tariffs = tariffs[tariffs['Year'] <= cutoff.year]
-
     payload = {
         "generated": date.today().strftime('%B %d, %Y'),
         "selectedAsOf": cutoff.strftime('%Y-%m-%d') if cutoff is not None else None,
@@ -445,8 +429,6 @@ def make_payload(offline: bool, as_of: str | None = None) -> dict:
         "eq": compute_equity(px),
         "cross": compute_cross(rates, px),
         "regime": compute_regime(rates, px),
-        "tariffs": {"years": tariffs['Year'].astype(int).tolist(),
-                    "rates": tariffs['Rate'].astype(float).round(2).tolist()},
     }
     return payload
 
@@ -779,11 +761,6 @@ TEMPLATE = r"""<!DOCTYPE html>
 
   <div id="crossWrap"></div>
 
-  <section>
-    <h2>Average U.S. tariff rate, 1900&ndash;present</h2>
-    <p class="sub">Annual average duty on total imports. Update once a year by appending a row to <span class="mono">data/tariffs.csv</span>.</p>
-    <div class="chartbox mini"><canvas id="tariffChart"></canvas></div>
-  </section>
 
   </div><!-- /panel-macro -->
 
@@ -1252,22 +1229,6 @@ if(!XA){
       }}
   });
 }
-
-/* ================= TARIFFS ================= */
-
-new Chart(document.getElementById('tariffChart'),{
-  type:'line',
-  data:{labels:P.tariffs.years, datasets:[{label:'Average tariff rate',
-    data:P.tariffs.rates, borderColor:C.w1y, borderWidth:1.8, pointRadius:0, pointHoverRadius:3,
-    fill:{target:'origin', above:'rgba(23,41,62,0.06)'}}]},
-  options:{...baseOpts(),
-    plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.parsed.y.toFixed(1)}%`}}},
-    scales:{
-      x:{grid:{display:false}, ticks:{autoSkip:false, maxRotation:0, font:{size:11},
-        callback:function(v){const y=+this.getLabelForValue(v); return y%20===0?y:null;}}},
-      y:{title:{display:true,text:'% of total imports',font:{size:11}}, grid:{color:C.line}, beginAtZero:true},
-    }}
-});
 
 /* ================= REGIME ================= */
 

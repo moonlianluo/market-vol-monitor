@@ -8,7 +8,12 @@ import streamlit.components.v1 as components
 from update_dashboard import make_payload, render_html
 
 
-st.set_page_config(page_title="Market Vol Monitor", page_icon="📈", layout="wide")
+st.set_page_config(
+    page_title="Market Vol Monitor",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -31,6 +36,11 @@ if "refresh_version" not in st.session_state:
     st.session_state.refresh_version = 0
 
 with st.sidebar:
+    st.title("Market Vol Monitor")
+    st.caption(
+        "A public research dashboard for realized volatility across "
+        "U.S. Treasury rates and large-cap equities."
+    )
     st.header("Data controls")
     mode = st.radio("As-of mode", ("Up to date", "Choose date"))
     chosen = None
@@ -48,13 +58,26 @@ with st.sidebar:
         st.session_state.refresh_version += 1
         st.rerun()
 
-    st.caption("Market data is pulled online and cached for one hour. Refresh clears the cache immediately.")
+    st.caption(
+        "Treasury yields come from Treasury.gov. Equity closes use yfinance "
+        "with Stooq fallback. Data is cached for one hour."
+    )
+    with st.expander("Methodology"):
+        st.markdown(
+            "Realized volatility is the sample standard deviation of daily "
+            "changes, annualized by √252. Rates are reported in basis points; "
+            "equities use log returns and are reported in percent."
+        )
+    st.caption("Research use only — not investment advice.")
 
 try:
     with st.spinner("Loading market data and calculating volatility..."):
         page = build_dashboard(chosen, st.session_state.refresh_version)
     components.html(page, height=6200, scrolling=True)
 except Exception as exc:
-    st.error("The dashboard could not be built from the online data sources.")
-    st.exception(exc)
+    print(f"Dashboard build failed: {type(exc).__name__}: {exc}")
+    st.error(
+        "The dashboard could not be refreshed from its public data sources. "
+        "Please try again later or run the local cached-data workflow."
+    )
 
